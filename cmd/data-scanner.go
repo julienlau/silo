@@ -1235,12 +1235,14 @@ func applyExpiryOnNonTransitionedObjects(ctx context.Context, objLayer ObjectLay
 		opts.DeletePrefixObject = true
 	}
 
-	// ILM-created delete markers must replicate like API-created ones. The S3
+	// ILM-created deletions must replicate like API-created ones. The S3
 	// DELETE path evaluates the delete replication decision while deleting,
-	// ILM expiry must do the same so the marker carries replication state and
-	// the resulting delete is queued to the targets below. Deletes of
-	// restored copies and of all versions stay local by design.
-	if lcEvent.Action == lifecycle.DeleteAction {
+	// ILM expiry must do the same so the delete marker (or version purge)
+	// carries replication state and is queued to the targets below.
+	// DeleteVersionAction reaches here from the decommission/heal paths in
+	// addition to the scanner's bulk noncurrent expiry. Deletes of restored
+	// copies and of all versions stay local by design.
+	if lcEvent.Action == lifecycle.DeleteAction || lcEvent.Action == lifecycle.DeleteVersionAction {
 		opts.SetEvalMetadataFn(func(oi *ObjectInfo, gerr error) (dsc ReplicateDecision, err error) {
 			return checkReplicateDelete(ctx, obj.Bucket, ObjectToDelete{
 				ObjectV: ObjectV{

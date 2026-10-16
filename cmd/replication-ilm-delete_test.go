@@ -83,10 +83,11 @@ func setILMTestReplicationConfig(t *testing.T, bucket, arn, targetBucket string)
 }
 
 func newILMTestReplicationPool(ctx context.Context, obj ObjectLayer, stats *ReplicationStats) (restore func(), receive func() DeletedObjectReplicationInfo) {
+	old := globalReplicationPool
 	p := &ReplicationPool{ctx: ctx, objLayer: obj, workers: []chan ReplicationWorkerOperation{make(chan ReplicationWorkerOperation, 8)}, stats: stats, mrfSaveCh: make(chan MRFReplicateEntry, 8)}
 	globalReplicationPool = once.NewSingleton[ReplicationPool]()
 	globalReplicationPool.Set(p)
-	return func() {}, func() DeletedObjectReplicationInfo {
+	return func() { globalReplicationPool = old }, func() DeletedObjectReplicationInfo {
 		select {
 		case op := <-p.workers[0]:
 			d, ok := op.(DeletedObjectReplicationInfo)
@@ -237,16 +238,16 @@ func testReplicateILMExpiryNoncurrentPurge(obj ObjectLayer, instanceType, bucket
 	if _, err := globalBucketMetadataSys.Update(ctx, bucket, bucketVersioningConfig, enabledBucketVersioningConfig); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := obj.PutObject(ctx, bucket, name, mustGetPutObjReader(t, strings.NewReader("v1"), 2, "", ""), ObjectOptions{Versioned: true}); err != nil {
-		t.Fatal(err)
-	}
-	v1Info, err := obj.PutObject(ctx, bucket, name, mustGetPutObjReader(t, strings.NewReader("v2"), 2, "", ""), ObjectOptions{Versioned: true})
+	v1Info, err := obj.PutObject(ctx, bucket, name, mustGetPutObjReader(t, strings.NewReader("v1"), 2, "", ""), ObjectOptions{Versioned: true})
 	if err != nil {
 		t.Fatal(err)
 	}
 	v1 := v1Info.VersionID
 	if v1 == "" {
-		t.Fatalf("%s: missing version ID on second version", instanceType)
+		t.Fatalf("%s: missing version ID on first version", instanceType)
+	}
+	if _, err := obj.PutObject(ctx, bucket, name, mustGetPutObjReader(t, strings.NewReader("v2"), 2, "", ""), ObjectOptions{Versioned: true}); err != nil {
+		t.Fatal(err)
 	}
 
 	target := newILMTestTarget(t)
